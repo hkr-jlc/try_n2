@@ -1132,3 +1132,131 @@ body {
         background: var(--bg-secondary);
     }
 }
+
+/* ==========================================
+   TTS STYLES
+   ========================================== */
+.tts-jp, .sentence-jp {
+    cursor: pointer;
+    position: relative;
+    transition: background-color 0.2s;
+    border-radius: 3px;
+    padding: 2px 4px;
+}
+
+.tts-jp:hover, .sentence-jp:hover {
+    background-color: #fff3cd; /* Kuning muda */
+    color: #856404;
+}
+
+.tts-jp:active, .sentence-jp:active {
+    background-color: #ffeaa7;
+}
+
+/* Indikator speaker (opsional) */
+.tts-jp::after, .sentence-jp::after {
+    content: '🔊';
+    font-size: 0.8em;
+    margin-left: 5px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.tts-jp:hover::after, .sentence-jp:hover::after {
+    opacity: 0.5;
+}
+
+/* ==========================================
+   SPEECH & ESSAY STYLES
+   ========================================== */
+.speech-section, .essay-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.speech-header, .essay-header {
+    border-bottom: 2px solid #e74c3c;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.speech-content-box, .essay-content-box {
+    line-height: 2;
+    font-size: 1.1rem;
+}
+
+.speech-jp, .essay-jp {
+    margin-bottom: 2rem;
+    text-align: justify;
+}
+
+/* Kalimat dalam speech/essay */
+.speech-jp .sentence-jp, .essay-jp .sentence-jp {
+    display: inline;
+    margin-right: 0.3em;
+    line-height: 2.5;
+}
+
+/* Box terjemahan */
+.speech-translation, .essay-translation {
+    background: #f8f9fa;
+    border-left: 4px solid #3498db;
+    padding: 1rem;
+    margin-top: 1.5rem;
+    border-radius: 0 8px 8px 0;
+}
+
+.translation-label {
+    font-weight: bold;
+    color: #3498db;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.translation-text {
+    color: #2c3e50;
+    line-height: 1.6;
+    font-size: 1rem;
+}
+
+/* Kategori badge */
+.kategori-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #e8f4f8;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    margin-top: 0.5rem;
+}
+
+.kategori-jp {
+    color: #2980b9;
+    font-weight: 600;
+}
+
+.kategori-id {
+    color: #7f8c8d;
+    font-size: 0.9em;
+    font-style: italic;
+}
+
+/* ==========================================
+   DIALOG STYLES
+   ========================================== */
+.line-jp {
+    font-size: 1.1rem;
+    margin-bottom: 0.3rem;
+}
+
+.line-id {
+    color: #7f8c8d;
+    font-size: 0.95rem;
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-style: italic;
+}
