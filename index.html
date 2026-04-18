@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRY! N2 - Japanese Learning App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">📚</span>
+                    <div>
+                        <div>TRY! N2</div>
+                        <div class="logo-sub">Japanese Learning</div>
+                    </div>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item active" data-page="isi">
+                    <span class="menu-icon">📋</span>
+                    <span class="menu-text">
+                        <span class="menu-jp">もくじ</span>
+                        <span class="menu-id">Daftar Isi</span>
+                    </span>
+                </li>
+                <li class="menu-item" data-page="bab">
+                    <span class="menu-icon">📖</span>
+                    <span class="menu-text">
+                        <span class="menu-jp">本文</span>
+                        <span class="menu-id">Bab/Bacaan</span>
+                    </span>
+                </li>
+                <li class="menu-item" data-page="grammar">
+                    <span class="menu-icon">✏️</span>
+                    <span class="menu-text">
+                        <span class="menu-jp">文法</span>
+                        <span class="menu-id">Grammar</span>
+                    </span>
+                </li>
+                <li class="menu-item" data-page="check">
+                    <span class="menu-icon">✓</span>
+                    <span class="menu-text">
+                        <span class="menu-jp">チェック</span>
+                        <span class="menu-id">Latihan</span>
+                    </span>
+                </li>
+                <li class="menu-item" data-page="matome">
+                    <span class="menu-icon">📝</span>
+                    <span class="menu-text">
+                        <span class="menu-jp">まとめ</span>
+                        <span class="menu-id">Rangkuman</span>
+                    </span>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Overlay for mobile -->
+        <div class="overlay" id="overlay"></div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menu-toggle">☰</button>
+                    <h1 class="page-title">TRY! N2 Japanese Learning</h1>
+                </div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="stopSpeaking()">🔇 Stop Audio</button>
+                </div>
+            </header>
+
+            <div class="content-wrapper">
+                <div id="content-area">
+                    <div class="loading">Memuat database...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
