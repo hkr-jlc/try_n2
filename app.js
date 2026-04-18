@@ -1,610 +1,632 @@
 // ==========================================
-// TRY! N2 - Complete Application JavaScript
+// TRY! N2 - Japanese Learning App
+// Main JavaScript File (app.js)
 // ==========================================
 
-// ===== CONFIGURATION =====
-const CONFIG = {
-    xmlPath: 'database.xml',
-    defaultBab: 1,
-    speechRate: 0.8,
-    ttsLang: 'ja-JP'
-};
+// Global Variables
+let currentBab = 1;
+let speechSynthesis = window.speechSynthesis;
+let currentUtterance = null;
+let appData = null;
 
-// ===== STATE MANAGEMENT =====
-let currentState = {
-    currentBab: 1,
-    currentPage: 'isi',
-    xmlData: null,
-    isPlaying: false,
-    sidebarOpen: false
-};
+// ==========================================
+// INITIALIZATION
+// ==========================================
+document.addEventListener('DOMContentLoaded', function() {
+    loadXMLData();
+    setupEventListeners();
+    setupTTSEventDelegation();
+});
 
-// ===== UTILITY FUNCTIONS =====
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+// ==========================================
+// XML DATA LOADING
+// ==========================================
+function loadXMLData() {
+    fetch('database.xml')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Gagal memuat database.xml');
+            }
+            return response.text();
+        })
+        .then(str => new window.DOMParser().parseFromString(str, "text/xml"))
+        .then(data => {
+            appData = data;
+            renderMenu();
+            renderSidebar();
+            // Load default bab 1
+            loadBab(1);
+        })
+        .catch(err => {
+            console.error('Error loading XML:', err);
+            document.getElementById('content-area').innerHTML = `
+                <div class="error-message">
+                    <p>Gagal memuat data. Pastikan file database.xml tersedia.</p>
+                </div>
+            `;
+        });
 }
 
-function escapeQuotes(text) {
-    return text.replace(/'/g, "\\'").replace(/"/g, '\\"');
-}
-
-// ===== TTS FUNCTIONS =====
-function speakJapanese(text) {
-    if (!text || !text.trim()) return;
+// ==========================================
+// MENU & NAVIGATION
+// ==========================================
+function renderMenu() {
+    const menuContainer = document.getElementById('main-menu');
+    if (!menuContainer || !appData) return;
     
-    if (!('speechSynthesis' in window)) {
-        alert('Browser tidak mendukung text-to-speech');
+    const chapters = appData.querySelectorAll('bab');
+    let html = '<ul class="menu-list">';
+    
+    chapters.forEach(chapter => {
+        const id = chapter.getAttribute('id');
+        const title = chapter.querySelector('judul')?.textContent || `Bab ${id}`;
+        const titleEn = chapter.querySelector('judul_en')?.textContent || '';
+        
+        html += `
+            <li class="menu-item" onclick="loadBab(${id})">
+                <span class="menu-number">${id}</span>
+                <span class="menu-title">
+                    <span class="jp">${title}</span>
+                    ${titleEn ? `<span class="en">${titleEn}</span>` : ''}
+                </span>
+            </li>
+        `;
+    });
+    
+    html += '</ul>';
+    menuContainer.innerHTML = html;
+}
+
+function renderSidebar() {
+    const sidebar = document.getElementById('sidebar-menu');
+    if (!sidebar || !appData) return;
+    
+    const chapters = appData.querySelectorAll('bab');
+    let html = '<ul class="sidebar-list">';
+    
+    chapters.forEach(chapter => {
+        const id = chapter.getAttribute('id');
+        const title = chapter.querySelector('judul')?.textContent || `Bab ${id}`;
+        
+        html += `
+            <li class="sidebar-item" onclick="loadBab(${id}); toggleSidebar()">
+                <span class="sidebar-number">Bab ${id}</span>
+                <span class="sidebar-title">${title}</span>
+            </li>
+        `;
+    });
+    
+    html += '</ul>';
+    sidebar.innerHTML = html;
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.toggle('active');
+    }
+}
+
+// ==========================================
+// CONTENT LOADING
+// ==========================================
+function loadBab(babId) {
+    currentBab = babId;
+    
+    if (!appData) {
+        console.error('Data belum dimuat');
         return;
     }
     
-    // Hentikan audio yang sedang berjalan
-    window.speechSynthesis.cancel();
+    const bab = appData.querySelector(`bab[id="${babId}"]`);
+    if (!bab) {
+        console.error('Bab tidak ditemukan:', babId);
+        return;
+    }
     
+    // Update header
+    updateHeader(bab);
+    
+    // Render content
+    const contentArea = document.getElementById('content-area');
+    let html = '<div class="bab-content">';
+    
+    // Render masing-masing section
+    const sections = bab.querySelectorAll('section');
+    sections.forEach(section => {
+        const type = section.getAttribute('type');
+        
+        switch(type) {
+            case 'mokuji':
+                html += renderMokuji(section);
+                break;
+            case 'dialog':
+                html += renderDialog(section);
+                break;
+            case 'speech':
+                html += renderSpeech(section);
+                break;
+            case 'essay':
+                html += renderEssay(section);
+                break;
+            case 'grammar':
+                html += renderGrammar(section);
+                break;
+            case 'check':
+                html += renderCheck(section);
+                break;
+            case 'matome':
+                html += renderMatome(section);
+                break;
+            default:
+                html += renderDefault(section);
+        }
+    });
+    
+    html += '</div>';
+    contentArea.innerHTML = html;
+    
+    // Re-initialize TTS untuk konten baru
+    setupTTSEventDelegation();
+}
+
+function updateHeader(bab) {
+    const header = document.getElementById('bab-header');
+    if (!header) return;
+    
+    const judul = bab.querySelector('judul')?.textContent || '';
+    const judulEn = bab.querySelector('judul_en')?.textContent || '';
+    const theme = bab.querySelector('theme')?.textContent || '';
+    
+    header.innerHTML = `
+        <div class="bab-title-container">
+            <h1 class="bab-number">Bab ${currentBab}</h1>
+            <h2 class="bab-judul tts-jp" data-text="${judul}">${judul}</h2>
+            ${judulEn ? `<h3 class="bab-judul-en">${judulEn}</h3>` : ''}
+            ${theme ? `<p class="bab-theme">${theme}</p>` : ''}
+        </div>
+    `;
+}
+
+// ==========================================
+// TTS (TEXT TO SPEECH) SYSTEM
+// ==========================================
+function setupTTSEventDelegation() {
+    // Event delegation untuk semua elemen dengan class .tts-jp atau .sentence-jp
+    document.addEventListener('click', function(e) {
+        // Cari elemen terdekat dengan class tts-jp atau sentence-jp
+        const target = e.target.closest('.tts-jp, .sentence-jp');
+        
+        if (target) {
+            // Dapatkan text dari data-text attribute atau textContent
+            const text = target.getAttribute('data-text') || target.textContent;
+            if (text) {
+                speakJapanese(text);
+            }
+        }
+    });
+}
+
+function speakJapanese(text) {
+    // Cancel speech sebelumnya jika masih berjalan
+    if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+    }
+    
+    // Hapus utterance sebelumnya
+    if (currentUtterance) {
+        currentUtterance = null;
+    }
+    
+    // Buat utterance baru
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = CONFIG.ttsLang;
-    utterance.rate = CONFIG.speechRate;
+    utterance.lang = 'ja-JP';
+    utterance.rate = 0.9; // Sedikit lebih lambat untuk pembelajaran
     utterance.pitch = 1;
     
-    window.speechSynthesis.speak(utterance);
+    // Simpan referensi
+    currentUtterance = utterance;
+    
+    // Event handlers
+    utterance.onend = function() {
+        currentUtterance = null;
+    };
+    
+    utterance.onerror = function(event) {
+        console.error('TTS Error:', event.error);
+        currentUtterance = null;
+    };
+    
+    // Mulai bicara
+    speechSynthesis.speak(utterance);
 }
 
 function stopSpeaking() {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+    if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
     }
+    currentUtterance = null;
 }
 
-// ===== XML LOADING & PARSING =====
-async function loadDatabase() {
-    try {
-        const response = await fetch(CONFIG.xmlPath);
-        if (!response.ok) throw new Error('Failed to load XML');
-        
-        const xmlText = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        
-        currentState.xmlData = xmlDoc;
-        console.log('Database loaded successfully');
-        
-        initializeApp();
-    } catch (error) {
-        console.error('Error loading database:', error);
-        document.getElementById('content-area').innerHTML = `
-            <div class="error-message">
-                <h3>Error Loading Database</h3>
-                <p>${error.message}</p>
-                <p>Pastikan file database.xml ada di folder yang sama.</p>
-            </div>
-        `;
-    }
-}
+// ==========================================
+// CONTENT RENDERERS
+// ==========================================
 
-function getTextContent(parent, tagName) {
-    if (!parent) return '';
-    const element = parent.querySelector(tagName);
-    return element ? element.textContent.trim() : '';
-}
-
-function getElements(parent, tagName) {
-    if (!parent) return [];
-    return Array.from(parent.querySelectorAll(tagName));
-}
-
-// ===== CONTENT RENDERERS =====
-
-// Render Daftar Isi
-function renderDaftarIsi() {
-    const babs = getElements(currentState.xmlData, 'bab');
-    let html = '<div class="daftar-isi-container">';
-    
-    html += '<h2 class="section-title">もくじ (Daftar Isi)</h2>';
-    
-    babs.forEach(bab => {
-        const id = bab.getAttribute('id');
-        const header = bab.querySelector('header');
-        const judul = getTextContent(header, 'judul');
-        const judulId = getTextContent(header, 'judul_id');
-        const halaman = getTextContent(header, 'halaman');
-        
-        html += `
-            <div class="bab-item" onclick="navigateToBab(${id})">
-                <div class="bab-header">
-                    <span class="bab-number">Bab ${id}</span>
-                    <span class="bab-page">Hal. ${halaman}</span>
-                </div>
-                <div class="bab-titles">
-                    <h3 class="judul-jp sentence-jp" onclick="event.stopPropagation(); speakJapanese('${escapeQuotes(judul)}')">${judul}</h3>
-                    <p class="judul-id">${judulId}</p>
-                </div>
-            </div>
-        `;
-    });
-    
-    html += '</div>';
-    return html;
-}
-
-// Render Header Bab
-function renderBabHeader(babData) {
-    const header = babData.querySelector('header');
-    return `
-        <div class="bab-header-detail">
-            <div class="bab-meta">
-                <span class="bab-number-large">Bab ${babData.getAttribute('id')}</span>
-                <span class="bab-page-ref">Halaman ${getTextContent(header, 'halaman')}</span>
-            </div>
-            <h1 class="main-title sentence-jp" onclick="speakJapanese('${escapeQuotes(getTextContent(header, 'judul'))}')">
-                ${getTextContent(header, 'judul')}
-            </h1>
-            <h2 class="sub-title">${getTextContent(header, 'judul_id')}</h2>
-        </div>
+// 1. Render Daftar Isi (Mokuji)
+function renderMokuji(section) {
+    const items = section.querySelectorAll('item');
+    let html = `
+        <div class="section mokuji-section">
+            <h2 class="section-title tts-jp" data-text="もくじ">もくじ <span class="section-subtitle">Daftar Isi</span></h2>
+            <ul class="mokuji-list">
     `;
-}
-
-// Render Content by Type
-function renderContent(contentElement) {
-    const type = contentElement.getAttribute('type');
-    
-    switch(type) {
-        case 'speech':
-            return renderSpeech(contentElement);
-        case 'essay':
-            return renderEssay(contentElement);
-        case 'job_ad':
-        case 'announcement':
-            return renderJobAd(contentElement);
-        case 'matome':
-            return renderMatome(contentElement);
-        default:
-            return `<div class="unknown-type">Unknown content type: ${type}</div>`;
-    }
-}
-
-// Render Speech
-function renderSpeech(speechData) {
-    const judul = getTextContent(speechData, 'judul');
-    const judulEn = getTextContent(speechData, 'judul_en');
-    const teks = getTextContent(speechData, 'teks');
-    const terjemahan = getTextContent(speechData, 'terjemahan') || getTextContent(speechData, 'teks_id');
-    
-    // Pecah teks per kalimat untuk TTS
-    const sentences = teks.match(/[^。！？]+[。！？]+/g) || [teks];
-    let processedText = '';
-    
-    sentences.forEach(sentence => {
-        if (sentence.trim()) {
-            processedText += `<span class="sentence-jp" onclick="speakJapanese('${escapeQuotes(sentence.trim())}')">${escapeHtml(sentence.trim())}</span>`;
-        }
-    });
-    
-    return `
-        <div class="content-card content-speech">
-            <div class="card-header">
-                <span class="content-type-badge">スピーチ</span>
-                <span class="content-type-id">Pidato</span>
-            </div>
-            <div class="speech-title-section">
-                <h3 class="content-title sentence-jp" onclick="speakJapanese('${escapeQuotes(judul)}')">${judul}</h3>
-                <span class="content-title-en">${judulEn}</span>
-            </div>
-            <div class="content-body">
-                <div class="japanese-content">
-                    ${processedText}
-                </div>
-                <div class="translation-box">
-                    <div class="translation-label">Terjemahan Indonesia:</div>
-                    <p class="translation-text">${terjemahan}</p>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// Render Essay
-function renderEssay(essayData) {
-    const judul = getTextContent(essayData, 'judul');
-    const judulEn = getTextContent(essayData, 'judul_en');
-    const teks = getTextContent(essayData, 'teks');
-    const terjemahan = getTextContent(essayData, 'terjemahan') || getTextContent(essayData, 'teks_id');
-    
-    const sentences = teks.match(/[^。！？]+[。！？]+/g) || [teks];
-    let processedText = '';
-    
-    sentences.forEach(sentence => {
-        if (sentence.trim()) {
-            processedText += `<span class="sentence-jp" onclick="speakJapanese('${escapeQuotes(sentence.trim())}')">${escapeHtml(sentence.trim())}</span>`;
-        }
-    });
-    
-    return `
-        <div class="content-card content-essay">
-            <div class="card-header">
-                <span class="content-type-badge">エッセー</span>
-                <span class="content-type-id">Esai</span>
-            </div>
-            <div class="essay-title-section">
-                <h3 class="content-title sentence-jp" onclick="speakJapanese('${escapeQuotes(judul)}')">${judul}</h3>
-                <span class="content-title-en">${judulEn}</span>
-            </div>
-            <div class="content-body">
-                <div class="japanese-content">
-                    ${processedText}
-                </div>
-                <div class="translation-box">
-                    <div class="translation-label">Terjemahan Indonesia:</div>
-                    <p class="translation-text">${terjemahan}</p>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// Render Job Ad / Announcement
-function renderJobAd(jobData) {
-    const judul = getTextContent(jobData, 'judul');
-    const judulEn = getTextContent(jobData, 'judul_en');
-    const pointGrammar = getTextContent(jobData, 'point_grammar');
-    const pointGrammarId = getTextContent(jobData, 'point_grammar_id');
-    const bunkei = getTextContent(jobData, 'bunkei');
-    
-    // Parse reibun (examples)
-    const reibunElements = getElements(jobData, 'item');
-    let examplesHtml = '';
-    
-    reibunElements.forEach((item, index) => {
-        const jp = getTextContent(item, 'jp');
-        const id = getTextContent(item, 'id');
-        
-        examplesHtml += `
-            <div class="example-item">
-                <div class="example-number">例 ${index + 1}</div>
-                <p class="example-jp sentence-jp" onclick="speakJapanese('${escapeQuotes(jp)}')">${jp}</p>
-                <p class="example-id">${id}</p>
-            </div>
-        `;
-    });
-    
-    return `
-        <div class="content-card content-job">
-            <div class="card-header">
-                <span class="content-type-badge">お知らせ・広告</span>
-                <span class="content-type-id">Pengumuman/Iklan</span>
-            </div>
-            <div class="job-title-section">
-                <h3 class="content-title sentence-jp" onclick="speakJapanese('${escapeQuotes(judul)}')">${judul}</h3>
-                <span class="content-title-en">${judulEn}</span>
-            </div>
-            
-            <div class="grammar-point-section">
-                <div class="grammar-label">文型 (Pola Kalimat):</div>
-                <div class="grammar-box">
-                    <p class="grammar-jp sentence-jp" onclick="speakJapanese('${escapeQuotes(pointGrammar)}')">${pointGrammar}</p>
-                    <p class="grammar-id">${pointGrammarId}</p>
-                </div>
-                <div class="bunkei-box">
-                    <span class="bunkei-label">文型:</span>
-                    <span class="bunkei-text">${bunkei}</span>
-                </div>
-            </div>
-            
-            <div class="examples-section">
-                <div class="examples-label">例文 (Contoh Kalimat):</div>
-                ${examplesHtml}
-            </div>
-        </div>
-    `;
-}
-
-// Render Matome (Summary)
-function renderMatome(matomeData) {
-    const items = getElements(matomeData, 'item');
-    let itemsHtml = '';
-    
-    items.forEach((item, index) => {
-        const jp = getTextContent(item, 'jp');
-        const id = getTextContent(item, 'id');
-        const en = getTextContent(item, 'en');
-        
-        itemsHtml += `
-            <div class="matome-item">
-                <div class="matome-number">${index + 1}</div>
-                <div class="matome-content">
-                    <p class="matome-jp sentence-jp" onclick="speakJapanese('${escapeQuotes(jp)}')">${jp}</p>
-                    <p class="matome-id">${id}</p>
-                    ${en ? `<p class="matome-en">${en}</p>` : ''}
-                </div>
-            </div>
-        `;
-    });
-    
-    return `
-        <div class="content-card content-matome">
-            <div class="card-header">
-                <span class="content-type-badge">まとめ</span>
-                <span class="content-type-id">Rangkuman</span>
-            </div>
-            <div class="matome-list">
-                ${itemsHtml}
-            </div>
-        </div>
-    `;
-}
-
-// Render Check (Quiz)
-function renderCheck(checkData) {
-    const id = checkData.getAttribute('id') || '';
-    const konteks = getTextContent(checkData, 'konteks');
-    const pertanyaan = getTextContent(checkData, 'pertanyaan');
-    const pilihanElements = getElements(checkData, 'item');
-    const jawaban = getTextContent(checkData, 'jawaban');
-    
-    let optionsHtml = '';
-    pilihanElements.forEach((opt, idx) => {
-        const text = opt.textContent.trim();
-        optionsHtml += `
-            <label class="quiz-option" onclick="selectOption(this, ${idx}, '${id}', '${jawaban}')">
-                <input type="radio" name="quiz-${id}" value="${idx}">
-                <span class="option-marker">${['ア', 'イ', 'ウ', 'エ'][idx]}</span>
-                <span class="option-text sentence-jp" onclick="event.stopPropagation(); speakJapanese('${escapeQuotes(text)}')">${text}</span>
-            </label>
-        `;
-    });
-    
-    return `
-        <div class="quiz-card" id="quiz-${id}">
-            <div class="quiz-header">
-                <span class="quiz-number">Check ${id}</span>
-                <span class="quiz-context sentence-jp" onclick="speakJapanese('${escapeQuotes(konteks)}')">${konteks}</span>
-            </div>
-            <div class="quiz-question">
-                <p>${pertanyaan}</p>
-            </div>
-            <div class="quiz-options">
-                ${optionsHtml}
-            </div>
-            <div class="quiz-result" id="result-${id}"></div>
-        </div>
-    `;
-}
-
-// Render Dekiru Koto (Can-do statements)
-function renderDekiruKoto(dekiruData) {
-    const items = getElements(dekiruData, 'item');
-    let html = '<div class="dekiru-section"><h3 class="dekiru-title">できること (Apa yang bisa dilakukan)</h3>';
     
     items.forEach(item => {
-        const jp = getTextContent(item, 'jp');
-        const id = getTextContent(item, 'id');
-        const en = getTextContent(item, 'en');
+        const number = item.getAttribute('number') || '';
+        const title = item.querySelector('title')?.textContent || '';
+        const titleId = item.querySelector('title_id')?.textContent || '';
+        const page = item.getAttribute('page') || '';
         
         html += `
-            <div class="dekiru-item">
-                <span class="check-icon">✓</span>
-                <div class="dekiru-content">
-                    <p class="dekiru-jp sentence-jp" onclick="speakJapanese('${escapeQuotes(jp)}')">${jp}</p>
-                    <p class="dekiru-id">${id}</p>
-                    ${en ? `<p class="dekiru-en">${en}</p>` : ''}
-                </div>
-            </div>
+            <li class="mokuji-item">
+                <span class="mokuji-number">${number}</span>
+                <span class="mokuji-title">
+                    <span class="jp-text tts-jp" data-text="${title}">${title}</span>
+                    ${titleId ? `<span class="id-text">(${titleId})</span>` : ''}
+                </span>
+                <span class="mokuji-page">${page}</span>
+            </li>
         `;
+    });
+    
+    html += '</ul></div>';
+    return html;
+}
+
+// 2. Render Dialog (Percakapan)
+function renderDialog(section) {
+    const content = section.querySelector('content');
+    if (!content) return '';
+    
+    const title = section.querySelector('title')?.textContent || '';
+    const setting = content.querySelector('setting')?.textContent || '';
+    const characters = content.querySelectorAll('character');
+    
+    let html = `
+        <div class="section dialog-section">
+            <h2 class="section-title tts-jp" data-text="${title}">${title}</h2>
+            ${setting ? `<p class="dialog-setting tts-jp" data-text="${setting}">${setting}</p>` : ''}
+            <div class="dialog-container">
+    `;
+    
+    characters.forEach(char => {
+        const name = char.querySelector('name')?.textContent || '';
+        const lines = char.querySelectorAll('line');
+        
+        html += `
+            <div class="character-block">
+                <div class="character-name tts-jp" data-text="${name}">${name}</div>
+                <div class="character-lines">
+        `;
+        
+        lines.forEach(line => {
+            const jpText = line.querySelector('jp')?.textContent || '';
+            const idText = line.querySelector('id')?.textContent || '';
+            
+            html += `
+                <div class="line-block">
+                    <p class="line-jp tts-jp" data-text="${jpText}">${highlightGrammar(jpText)}</p>
+                    ${idText ? `<p class="line-id">${idText}</p>` : ''}
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    });
+    
+    html += '</div></div>';
+    return html;
+}
+
+// 3. Render Speech (Pidato) - FIXED
+function renderSpeech(section) {
+    const content = section.querySelector('content');
+    if (!content) return '';
+    
+    const title = section.querySelector('title')?.textContent || '';
+    const titleEn = section.querySelector('title_en')?.textContent || '';
+    const kategori = section.querySelector('kategori')?.textContent || '';
+    const kategoriId = section.querySelector('kategori_id')?.textContent || '';
+    const teks = content.querySelector('teks')?.textContent || '';
+    const terjemahan = content.querySelector('terjemahan')?.textContent || '';
+    
+    // Split teks menjadi kalimat-kalimat untuk TTS individual
+    const sentences = teks.split(/([。！？])/);
+    let formattedText = '';
+    let currentSentence = '';
+    
+    sentences.forEach((part, index) => {
+        if (part.match(/[。！？]/)) {
+            currentSentence += part;
+            const cleanSentence = currentSentence.trim();
+            if (cleanSentence) {
+                formattedText += `<span class="sentence-jp" data-text="${cleanSentence}">${cleanSentence}</span>`;
+            }
+            currentSentence = '';
+        } else {
+            currentSentence += part;
+        }
+    });
+    
+    if (currentSentence.trim()) {
+        formattedText += `<span class="sentence-jp" data-text="${currentSentence.trim()}">${currentSentence.trim()}</span>`;
+    }
+    
+    let html = `
+        <div class="section speech-section">
+            <div class="speech-header">
+                <h2 class="section-title tts-jp" data-text="${title}">${title}</h2>
+                ${titleEn ? `<h3 class="section-title-en">${titleEn}</h3>` : ''}
+                ${kategori ? `
+                    <div class="kategori-badge">
+                        <span class="kategori-jp tts-jp" data-text="${kategori}">${kategori}</span>
+                        ${kategoriId ? `<span class="kategori-id">${kategoriId}</span>` : ''}
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="speech-content-box">
+                <div class="speech-jp">
+                    ${formattedText}
+                </div>
+                ${terjemahan ? `
+                    <div class="speech-translation">
+                        <p class="translation-label">Terjemahan:</p>
+                        <p class="translation-text">${terjemahan}</p>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    return html;
+}
+
+// 4. Render Essay (Esai) - FIXED
+function renderEssay(section) {
+    const content = section.querySelector('content');
+    if (!content) return '';
+    
+    const title = section.querySelector('title')?.textContent || '';
+    const titleEn = section.querySelector('title_en')?.textContent || '';
+    const kategori = section.querySelector('kategori')?.textContent || '';
+    const kategoriId = section.querySelector('kategori_id')?.textContent || '';
+    const teks = content.querySelector('teks')?.textContent || '';
+    const terjemahan = content.querySelector('terjemahan')?.textContent || '';
+    
+    // Split teks menjadi kalimat-kalimat
+    const sentences = teks.split(/([。！？])/);
+    let formattedText = '';
+    let currentSentence = '';
+    
+    sentences.forEach((part, index) => {
+        if (part.match(/[。！？]/)) {
+            currentSentence += part;
+            const cleanSentence = currentSentence.trim();
+            if (cleanSentence) {
+                formattedText += `<span class="sentence-jp" data-text="${cleanSentence}">${cleanSentence}</span>`;
+            }
+            currentSentence = '';
+        } else {
+            currentSentence += part;
+        }
+    });
+    
+    if (currentSentence.trim()) {
+        formattedText += `<span class="sentence-jp" data-text="${currentSentence.trim()}">${currentSentence.trim()}</span>`;
+    }
+    
+    let html = `
+        <div class="section essay-section">
+            <div class="essay-header">
+                <h2 class="section-title tts-jp" data-text="${title}">${title}</h2>
+                ${titleEn ? `<h3 class="section-title-en">${titleEn}</h3>` : ''}
+                ${kategori ? `
+                    <div class="kategori-badge">
+                        <span class="kategori-jp tts-jp" data-text="${kategori}">${kategori}</span>
+                        ${kategoriId ? `<span class="kategori-id">${kategoriId}</span>` : ''}
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="essay-content-box">
+                <div class="essay-jp">
+                    ${formattedText}
+                </div>
+                ${terjemahan ? `
+                    <div class="essay-translation">
+                        <p class="translation-label">Terjemahan:</p>
+                        <p class="translation-text">${terjemahan}</p>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    return html;
+}
+
+// 5. Render Grammar (Tata Bahasa)
+function renderGrammar(section) {
+    const points = section.querySelectorAll('point');
+    let html = '<div class="section grammar-section">';
+    
+    const title = section.querySelector('title')?.textContent || '文法 Grammar';
+    html += `<h2 class="section-title tts-jp" data-text="${title}">${title}</h2>`;
+    
+    points.forEach(point => {
+        const number = point.getAttribute('number') || '';
+        const judul = point.querySelector('judul')?.textContent || '';
+        const penjelasan = point.querySelector('penjelasan')?.textContent || '';
+        const contohList = point.querySelectorAll('contoh');
+        
+        html += `
+            <div class="grammar-point">
+                <div class="point-header">
+                    <span class="point-number">${number}</span>
+                    <h3 class="point-judul tts-jp" data-text="${judul}">${highlightGrammar(judul)}</h3>
+                </div>
+                ${penjelasan ? `<p class="point-penjelasan">${penjelasan}</p>` : ''}
+        `;
+        
+        if (contohList.length > 0) {
+            html += '<div class="contoh-list">';
+            contohList.forEach(contoh => {
+                const jp = contoh.querySelector('jp')?.textContent || '';
+                const id = contoh.querySelector('id')?.textContent || '';
+                
+                html += `
+                    <div class="contoh-item">
+                        <p class="contoh-jp tts-jp" data-text="${jp}">${highlightGrammar(jp)}</p>
+                        ${id ? `<p class="contoh-id">${id}</p>` : ''}
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+        
+        html += '</div>';
     });
     
     html += '</div>';
     return html;
 }
 
-// ===== NAVIGATION FUNCTIONS =====
-function navigateTo(page) {
-    currentState.currentPage = page;
-    const contentArea = document.getElementById('content-area');
+// 6. Render Check (Latihan)
+function renderCheck(section) {
+    const questions = section.querySelectorAll('question');
+    let html = `
+        <div class="section check-section">
+            <h2 class="section-title">Check! <span class="section-subtitle">Latihan</span></h2>
+            <div class="check-container">
+    `;
     
-    // Update active menu
-    document.querySelectorAll('.menu-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.getAttribute('data-page') === page) {
-            item.classList.add('active');
-        }
+    questions.forEach((q, index) => {
+        const question = q.querySelector('q')?.textContent || '';
+        const answer = q.querySelector('a')?.textContent || '';
+        const explanation = q.querySelector('e')?.textContent || '';
+        
+        html += `
+            <div class="question-block" id="q-${index}">
+                <div class="question-header">
+                    <span class="q-number">${index + 1}</span>
+                    <p class="question-text tts-jp" data-text="${question}">${highlightGrammar(question)}</p>
+                </div>
+                <div class="answer-section" style="display:none;">
+                    <p class="answer-label">Jawaban:</p>
+                    <p class="answer-text tts-jp" data-text="${answer}">${answer}</p>
+                    ${explanation ? `<p class="explanation">${explanation}</p>` : ''}
+                </div>
+                <button class="show-answer-btn" onclick="toggleAnswer(${index})">
+                    Lihat Jawaban
+                </button>
+            </div>
+        `;
     });
     
-    // Render content based on page
-    switch(page) {
-        case 'isi':
-            contentArea.innerHTML = renderDaftarIsi();
-            break;
-        case 'bab':
-            renderBabContent(currentState.currentBab);
-            break;
-        case 'grammar':
-            renderGrammarPage();
-            break;
-        case 'check':
-            renderCheckPage();
-            break;
-        case 'matome':
-            renderMatomePage();
-            break;
-        default:
-            contentArea.innerHTML = renderDaftarIsi();
-    }
-    
-    // Close sidebar on mobile after navigation
-    if (window.innerWidth < 768) {
-        toggleSidebar(false);
-    }
-    
-    window.scrollTo(0, 0);
+    html += '</div></div>';
+    return html;
 }
 
-function navigateToBab(babId) {
-    currentState.currentBab = babId;
-    navigateTo('bab');
-}
-
-function renderBabContent(babId) {
-    const bab = currentState.xmlData.querySelector(`bab[id="${babId}"]`);
-    if (!bab) {
-        document.getElementById('content-area').innerHTML = '<div class="error">Bab tidak ditemukan</div>';
-        return;
-    }
+function toggleAnswer(index) {
+    const answerSection = document.querySelector(`#q-${index} .answer-section`);
+    const btn = document.querySelector(`#q-${index} .show-answer-btn`);
     
-    let html = renderBabHeader(bab);
-    html += '<div class="bab-content">';
-    
-    // Render all contents
-    const contents = getElements(bab, 'content');
-    contents.forEach(content => {
-        html += renderContent(content);
-    });
-    
-    // Render dekiru_koto if exists
-    const dekiru = bab.querySelector('dekiru_koto');
-    if (dekiru) {
-        html += renderDekiruKoto(dekiru);
-    }
-    
-    // Render check items if exists
-    const checks = getElements(bab, 'check');
-    if (checks.length > 0) {
-        html += '<div class="checks-section"><h3 class="section-title">Check (Latihan)</h3>';
-        checks.forEach(check => {
-            html += renderCheck(check);
-        });
-        html += '</div>';
-    }
-    
-    html += '</div>';
-    
-    // Navigation buttons
-    html += `
-        <div class="bab-navigation">
-            ${babId > 1 ? `<button class="nav-btn prev-btn" onclick="navigateToBab(${babId - 1})">← Bab ${babId - 1}</button>` : '<div></div>'}
-            ${babId < 16 ? `<button class="nav-btn next-btn" onclick="navigateToBab(${babId + 1})">Bab ${babId + 1} →</button>` : '<div></div>'}
-        </div>
-    `;
-    
-    document.getElementById('content-area').innerHTML = html;
-}
-
-function renderGrammarPage() {
-    document.getElementById('content-area').innerHTML = `
-        <div class="placeholder-page">
-            <h2>Grammar Point</h2>
-            <p>Halaman grammar akan ditampilkan di sini.</p>
-        </div>
-    `;
-}
-
-function renderCheckPage() {
-    document.getElementById('content-area').innerHTML = `
-        <div class="placeholder-page">
-            <h2>Check (Latihan)</h2>
-            <p>Semua soal check akan ditampilkan di sini.</p>
-        </div>
-    `;
-}
-
-function renderMatomePage() {
-    document.getElementById('content-area').innerHTML = `
-        <div class="placeholder-page">
-            <h2>Matome (Rangkuman)</h2>
-            <p>Rangkuman semua bab akan ditampilkan di sini.</p>
-        </div>
-    `;
-}
-
-// ===== INTERACTION FUNCTIONS =====
-function selectOption(element, value, quizId, correctAnswer) {
-    const quizCard = document.getElementById(`quiz-${quizId}`);
-    const resultDiv = document.getElementById(`result-${quizId}`);
-    const options = quizCard.querySelectorAll('.quiz-option');
-    
-    // Disable all options
-    options.forEach(opt => {
-        opt.style.pointerEvents = 'none';
-        opt.classList.remove('selected');
-    });
-    
-    // Mark selected
-    element.classList.add('selected');
-    element.querySelector('input').checked = true;
-    
-    // Check answer
-    const isCorrect = value.toString() === correctAnswer;
-    if (isCorrect) {
-        element.classList.add('correct');
-        resultDiv.innerHTML = '<span class="result-correct">✓ Benar!</span>';
+    if (answerSection.style.display === 'none') {
+        answerSection.style.display = 'block';
+        btn.textContent = 'Sembunyikan';
     } else {
-        element.classList.add('wrong');
-        options[parseInt(correctAnswer)].classList.add('correct');
-        resultDiv.innerHTML = '<span class="result-wrong">✗ Salah. Jawaban yang benar: ' + ['ア', 'イ', 'ウ', 'エ'][parseInt(correctAnswer)] + '</span>';
+        answerSection.style.display = 'none';
+        btn.textContent = 'Lihat Jawaban';
     }
 }
 
-function toggleSidebar(forceState) {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('overlay');
+// 7. Render Matome (Rangkuman)
+function renderMatome(section) {
+    const items = section.querySelectorAll('item');
+    let html = `
+        <div class="section matome-section">
+            <h2 class="section-title tts-jp" data-text="まとめ">まとめ <span class="section-subtitle">Rangkuman</span></h2>
+            <div class="matome-list">
+    `;
     
-    if (typeof forceState !== 'undefined') {
-        currentState.sidebarOpen = forceState;
-    } else {
-        currentState.sidebarOpen = !currentState.sidebarOpen;
-    }
-    
-    if (currentState.sidebarOpen) {
-        sidebar.classList.add('open');
-        overlay.classList.add('show');
-        document.body.style.overflow = 'hidden';
-    } else {
-        sidebar.classList.remove('open');
-        overlay.classList.remove('show');
-        document.body.style.overflow = '';
-    }
-}
-
-// ===== INITIALIZATION =====
-function initializeApp() {
-    // Setup menu click handlers
-    document.querySelectorAll('.menu-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.getAttribute('data-page');
-            navigateTo(page);
-        });
+    items.forEach(item => {
+        const jp = item.querySelector('jp')?.textContent || '';
+        const id = item.querySelector('id')?.textContent || '';
+        
+        html += `
+            <div class="matome-item">
+                <div class="matome-jp tts-jp" data-text="${jp}">${jp}</div>
+                ${id ? `<div class="matome-id">${id}</div>` : ''}
+            </div>
+        `;
     });
     
-    // Setup sidebar toggle
+    html += '</div></div>';
+    return html;
+}
+
+// 8. Render Default (Fallback)
+function renderDefault(section) {
+    const title = section.querySelector('title')?.textContent || '';
+    const content = section.innerHTML;
+    
+    return `
+        <div class="section">
+            ${title ? `<h2 class="section-title">${title}</h2>` : ''}
+            <div class="default-content">${content}</div>
+        </div>
+    `;
+}
+
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
+
+function highlightGrammar(text) {
+    // Highlight pola N2 dalam teks (opsional)
+    // Contoh: highlight partikel atau pola tertentu
+    return text;
+}
+
+function setupEventListeners() {
+    // Tombol menu toggle
     const menuToggle = document.getElementById('menu-toggle');
     if (menuToggle) {
-        menuToggle.addEventListener('click', () => toggleSidebar());
+        menuToggle.addEventListener('click', toggleSidebar);
     }
     
-    const overlay = document.getElementById('overlay');
-    if (overlay) {
-        overlay.addEventListener('click', () => toggleSidebar(false));
-    }
-    
-    // Close sidebar on window resize if open
-    window.addEventListener('resize', () => {
-        if (window.innerWidth >= 768 && currentState.sidebarOpen) {
-            toggleSidebar(false);
+    // Tombol stop TTS (opsional - jika ingin tombol stop)
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            stopSpeaking();
         }
     });
-    
-    // Load initial page
-    navigateTo('isi');
 }
 
-// Start app when DOM ready
-document.addEventListener('DOMContentLoaded', () => {
-    loadDatabase();
-});
+// ==========================================
+// LANGUAGE SWITCHER (Jika diperlukan)
+// ==========================================
+function changeLanguage(lang) {
+    document.documentElement.lang = lang;
+    // Simpan preference
+    localStorage.setItem('preferred-lang', lang);
+}
 
-// Handle keyboard navigation
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && currentState.sidebarOpen) {
-        toggleSidebar(false);
-    }
-});
+// Export functions untuk global access
+window.loadBab = loadBab;
+window.toggleSidebar = toggleSidebar;
+window.toggleAnswer = toggleAnswer;
+window.speakJapanese = speakJapanese;
+window.stopSpeaking = stopSpeaking;
+window.changeLanguage = changeLanguage;
